@@ -1,0 +1,67 @@
+name: PL-SQL IF-ELSE Autograding
+
+on:
+  push:
+  pull_request:
+
+jobs:
+
+  autograding:
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout Student Code
+        uses: actions/checkout@v4
+
+      - name: Start Oracle Database
+        run: |
+          docker run -d \
+            --name oracle-free \
+            -p 1521:1521 \
+            -e ORACLE_PASSWORD=Oracle123 \
+            gvenzl/oracle-free:23-slim
+
+      - name: Wait for Oracle Database
+        run: |
+          echo "Waiting for Oracle Database..."
+
+          for i in {1..60}
+          do
+            if docker exec oracle-free \
+              bash -c "echo 'SELECT 1 FROM DUAL;' | sqlplus -s SYSTEM/Oracle123@FREEPDB1" \
+              | grep -q "1"
+            then
+              echo "Oracle Database is ready."
+              break
+            fi
+
+            sleep 5
+          done
+
+      - name: Check answers.sql
+        run: |
+          if [ ! -f answers.sql ]; then
+            echo "ERROR: answers.sql not found."
+            echo "Please submit your PL/SQL program as answers.sql"
+            exit 1
+          fi
+
+      - name: Copy Student Program
+        run: |
+          docker exec oracle-free mkdir -p /workspace
+          docker cp answers.sql oracle-free:/workspace/answers.sql
+
+      - name: Run Test Script
+        env:
+          ORACLE_PASSWORD: Oracle123
+        run: |
+          chmod +x tests/test.sh
+          ./tests/test.sh
+
+      - name: Stop Oracle Database
+        if: always()
+        run: |
+          docker stop oracle-free || true
+          docker rm oracle-free || true
